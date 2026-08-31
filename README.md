@@ -17,6 +17,26 @@ An OpenClaw gateway can fail for more than one reason at the same time. In the i
 
 The goal of this repository is to help operators diagnose the **next exact blocker** instead of deleting state or applying broad, destructive fixes.
 
+## Quick failure triage
+
+Start with the exact error you can observe. Do not treat this table as proof of root cause; use it to choose the next safe inspection step.
+
+| Symptom / error | Do **not** assume | Next safe check | Guide |
+|---|---|---|---|
+| `ECONNREFUSED` | The port or firewall is automatically the root cause | Check deep gateway status and the fresh service journal | [Diagnosis workflow](docs/diagnosis.md) |
+| `AgentSelectionRequiredError` | An agent must be deleted | Inspect the multi-agent ownership/system-agent configuration | [Recovery procedure](docs/recovery-procedure.md#phase-c--resolve-multi-agent-ownership-only-if-evidenced) |
+| `Plugin version drift` | Every plugin or OpenClaw component should be updated blindly | Identify and verify the specific plugin/version reported by deep status | [Recovery procedure](docs/recovery-procedure.md#phase-d--resolve-official-plugin-drift) |
+| `Legacy session store requires migration` | `sessions.json` should be renamed or deleted | Run targeted `inspect` and `dry-run` before any import | [Session SQLite migration](docs/session-sqlite-migration.md) |
+| `start-limit-hit` | systemd itself is the root cause | Read the preceding gateway startup exception in the journal | [systemd recovery](docs/systemd-recovery.md#start-limit-hit) |
+
+A useful mental model is:
+
+```text
+symptom → evidence → one justified change → probe → fresh evidence
+```
+
+A different error after a justified fix can be progress: the gateway may have advanced far enough to expose the next blocker.
+
 ## Recovery principles
 
 1. **Back up first.** Preserve `~/.openclaw` before modifying state.
