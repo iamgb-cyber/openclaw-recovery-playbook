@@ -79,9 +79,92 @@ The recovery was completed without deleting the configured agents or their migra
 - [systemd recovery notes](docs/systemd-recovery.md)
 - [Post-recovery checklist](docs/post-recovery-checklist.md)
 
+## Privacy-first diagnostic collector
+
+The repository includes [`scripts/diagnostics/openclaw-diagnostics.sh`](scripts/diagnostics/openclaw-diagnostics.sh), a conservative Bash collector intended to gather enough evidence for initial troubleshooting without making recovery changes.
+
+Current collector version: **0.3.1**.
+
+The default mode follows a **minimum collection** principle. It requests only:
+
+- UTC time;
+- operating system/kernel information;
+- OpenClaw version;
+- `openclaw gateway status --deep`;
+- selected read-only systemd gateway properties.
+
+It does **not** request `sudo`, restart/stop/start the service, change OpenClaw configuration, migrate sessions, change permissions, or upload data. Sanitization is best-effort and must never be treated as a guarantee that output is safe to publish.
+
+### Run the default diagnostic
+
+```bash
+bash scripts/diagnostics/openclaw-diagnostics.sh
+```
+
+The following higher-risk sections are deliberately **opt-in**:
+
+| Option | Adds | Why it is opt-in |
+|---|---|---|
+| `--include-status` | `openclaw status` | May expose host, agent, session, heartbeat, account, or network details |
+| `--include-agents` | `openclaw agents list` | Agent identifiers and environment-specific metadata require additional sanitization/review |
+| `--include-plugins` | `openclaw plugins list` | Custom/private plugin names or paths may reveal environment details |
+| `--include-logs` | Last 80 gateway journal message bodies | Logs may contain sensitive runtime data |
+| `--output FILE` | A local report file | Creates a new `0600` file; existing files and symlinks are refused |
+
+Agent bindings are intentionally **not requested** by the collector, even when `--include-agents` is enabled.
+
+### Sanitized example
+
+A healthy default-mode report can resemble:
+
+```text
+OpenClaw Diagnostic Report (sanitized)
+Collector version: 0.3.1
+Privacy mode: minimal collection by default; sensitive sections are opt-in.
+
+===== OpenClaw version =====
+OpenClaw 2026.8.1 (<build-id>)
+
+===== Gateway deep status =====
+Gateway: bind=loopback (127.0.0.1), port=18789 (service args)
+CLI version: 2026.8.1
+Gateway version: 2026.8.1
+Runtime: running (pid <pid>, state active, sub running, last exit 0, reason 0)
+Connectivity probe: ok
+Listening: 127.0.0.1:18789
+
+===== OpenClaw status =====
+Not collected by default. Use --include-status only if needed.
+
+===== Configured agents =====
+Not collected by default. Use --include-agents only if needed.
+
+===== Plugins =====
+Not collected by default. Use --include-plugins only if needed.
+
+===== systemd gateway state =====
+LoadState=loaded
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+NRestarts=0
+ExecMainStatus=0
+
+===== Gateway journal =====
+Not collected by default. Use --include-logs only if needed.
+```
+
+The example is intentionally shortened and generalized. Do not copy raw terminal prompts, usernames, hostnames, private addresses, agent IDs, session identifiers, tokens, or unreviewed logs into an issue or public report.
+
+### Before sharing diagnostic output
+
+Manually inspect the report even if it says `sanitized`. Look specifically for usernames, hostnames, public/private IP addresses, IPv6 addresses, email addresses, agent or workspace names, account/channel/binding names, UUIDs, tokens, secrets, organization/project names, custom plugin names/paths, and any other environment-specific information.
+
+If sensitive data remains, **do not publish the report**. Redact it manually or improve the collector first.
+
 ## Fast diagnostic commands
 
-These commands are intentionally read-only or low-risk:
+For operators who prefer to inspect commands individually, these are useful diagnostic commands, but their raw output may contain sensitive information:
 
 ```bash
 openclaw --version
@@ -92,6 +175,8 @@ journalctl --user -u openclaw-gateway.service -n 80 --no-pager
 openclaw agents list --bindings
 openclaw plugins list
 ```
+
+Review raw output before sharing it publicly.
 
 If systemd has stopped retrying after repeated failures, **fix the root cause first**, then reset the failure counter:
 
