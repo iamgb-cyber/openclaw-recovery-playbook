@@ -23,11 +23,11 @@ Start with the exact error you can observe. Do not treat this table as proof of 
 
 | Symptom / error | Do **not** assume | Next safe check | Guide |
 |---|---|---|---|
-| `ECONNREFUSED` | The port or firewall is automatically the root cause | Check deep gateway status and the fresh service journal | [Diagnosis workflow](docs/diagnosis.md) |
-| `AgentSelectionRequiredError` | An agent must be deleted | Inspect the multi-agent ownership/system-agent configuration | [Recovery procedure](docs/recovery-procedure.md#phase-c--resolve-multi-agent-ownership-only-if-evidenced) |
-| `Plugin version drift` | Every plugin or OpenClaw component should be updated blindly | Identify and verify the specific plugin/version reported by deep status | [Recovery procedure](docs/recovery-procedure.md#phase-d--resolve-official-plugin-drift) |
+| `ECONNREFUSED` | The port or firewall is automatically the root cause | Check deep gateway status and the fresh service journal | [Known failure patterns](docs/known-failure-patterns.md#pattern-1--gateway-connection-refused) |
+| `AgentSelectionRequiredError` | An agent must be deleted | Inspect the multi-agent ownership/system-agent configuration | [Known failure patterns](docs/known-failure-patterns.md#pattern-2--multi-agent-owner-ambiguity) |
+| `Plugin version drift` | Every plugin or OpenClaw component should be updated blindly | Identify and verify the specific plugin/version reported by deep status | [Known failure patterns](docs/known-failure-patterns.md#pattern-5--official-plugin-version-drift) |
 | `Legacy session store requires migration` | `sessions.json` should be renamed or deleted | Run targeted `inspect` and `dry-run` before any import | [Session SQLite migration](docs/session-sqlite-migration.md) |
-| `start-limit-hit` | systemd itself is the root cause | Read the preceding gateway startup exception in the journal | [systemd recovery](docs/systemd-recovery.md#start-limit-hit) |
+| `start-limit-hit` | systemd itself is the root cause | Read the preceding gateway startup exception in the journal | [Known failure patterns](docs/known-failure-patterns.md#pattern-7--systemd-start-limit-hit) |
 
 A useful mental model is:
 
@@ -72,6 +72,9 @@ The recovery was completed without deleting the configured agents or their migra
 
 ## Start here
 
+- [Safe recovery workflow](docs/safe-recovery-workflow.md)
+- [Known failure patterns](docs/known-failure-patterns.md)
+- [Sanitized error examples](examples/errors/sanitized-errors.md)
 - [Incident report](docs/incident-2026-08-31.md)
 - [Diagnosis workflow](docs/diagnosis.md)
 - [Recovery procedure](docs/recovery-procedure.md)
