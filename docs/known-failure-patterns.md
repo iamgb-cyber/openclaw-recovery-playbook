@@ -314,11 +314,79 @@ one justified change
 
 Avoid stacking speculative fixes. The central discipline of this playbook is **one evidenced blocker at a time**.
 
+---
+
+## Pattern 9 — UI is reachable but an agent turn fails on workspace migration
+
+### Observable signature
+
+```text
+Legacy workspace setup state requires migration for <workspace-path>;
+run openclaw doctor --fix.
+```
+
+### What it tells you
+
+The Gateway transport and control UI can be healthy while a selected agent's workspace setup/attestation state is still legacy and not ready for runtime use.
+
+### Do not assume
+
+- a reachable UI proves the agent runtime is healthy;
+- the agent itself is corrupt;
+- changing the system-agent selection will repair workspace state;
+- deleting workspace files is an acceptable migration.
+
+### Safe next step
+
+Preserve state, stop the Gateway before Doctor-owned shared-state migrations, and rerun the supported repair path offline. Retain the output showing whether workspace setup/attestation state was imported and verified.
+
+Related upstream report for OpenClaw `2026.8.1`:
+
+- <https://github.com/openclaw/openclaw/issues/133881>
+
+See [UI Reachable but Agent Turns Fail After Upgrade](ui-agent-runtime-migration.md).
+
+---
+
+## Pattern 10 — Legacy exec approvals block the repair path
+
+### Observable signature
+
+```text
+ExecApprovalsMigrationRequiredError:
+Legacy exec approvals exist at ~/.openclaw/exec-approvals.json.
+Run `openclaw doctor --fix` before using exec approvals.
+```
+
+The same warning may also appear during Doctor itself.
+
+### What it tells you
+
+A retired file-backed approvals source remains visible while the current runtime expects canonical approvals state in SQLite.
+
+On affected OpenClaw `2026.8.1` builds, upstream reports show that this can become a catch-22: the error directs the operator to Doctor, but Doctor can encounter the same gate before reaching the migration step that would retire the file.
+
+### Do not assume
+
+- deleting the legacy file is safe;
+- a repeated `doctor --fix` invocation will necessarily produce a different result;
+- manually editing `openclaw.sqlite` is appropriate;
+- this release-specific workaround applies unchanged to future OpenClaw releases.
+
+### Safe next step
+
+Keep the Gateway stopped, create a verified backup, preserve the legacy approvals document privately, and follow the version-aware recovery guidance in [UI Reachable but Agent Turns Fail After Upgrade](ui-agent-runtime-migration.md).
+
+Related upstream regression report:
+
+- <https://github.com/openclaw/openclaw/issues/133813>
+
 ## Related guides
 
 - [Diagnosis Workflow](diagnosis.md)
 - [Safe Recovery Workflow](safe-recovery-workflow.md)
 - [Recovery Procedure](recovery-procedure.md)
 - [Legacy Session Store → SQLite Migration](session-sqlite-migration.md)
+- [UI Reachable but Agent Turns Fail After Upgrade](ui-agent-runtime-migration.md)
 - [systemd Recovery Notes](systemd-recovery.md)
 - [Sanitized Error Examples](../examples/errors/sanitized-errors.md)
