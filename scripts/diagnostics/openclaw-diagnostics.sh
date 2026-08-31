@@ -19,7 +19,7 @@
 
 set -u
 
-SCRIPT_VERSION="0.3.0"
+SCRIPT_VERSION="0.3.1"
 INCLUDE_STATUS=0
 INCLUDE_AGENTS=0
 INCLUDE_PLUGINS=0
@@ -125,7 +125,7 @@ sanitize() {
     -e 's#<loopback>#127.0.0.1#g' \
     -e 's#[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}#<uuid>#g' \
     -e 's#[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}#<email>#g' \
-    -e 's#([[:xdigit:]]{1,4}:){2,7}[[:xdigit:]]{0,4}#<ipv6-address>#g' \
+    -e 's#([[:xdigit:]]{1,4}:){3,7}[[:xdigit:]]{0,4}#<ipv6-address>#g' \
     -e 's#(Bearer[[:space:]]+)[^[:space:]]+#\1<redacted-token>#Ig' \
     -e 's#((api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+#\1<redacted-secret>#Ig' \
     -e 's#sk-[A-Za-z0-9_-]{12,}#<redacted-token>#g'
