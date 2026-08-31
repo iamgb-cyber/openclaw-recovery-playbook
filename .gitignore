@@ -1,0 +1,27 @@
+# OpenClaw state and sensitive artifacts
+.openclaw/
+*.sqlite
+*.sqlite3
+*.db
+*.jsonl
+*.log
+.env
+.env.*
+*.pem
+*.key
+
+# Recovery / backup artifacts
+*backup*/
+*recovery*/
+*.bak
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
+*~
