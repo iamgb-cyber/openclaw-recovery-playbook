@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 
-# OpenClaw Recovery Playbook - read-only diagnostic collector
+# OpenClaw Recovery Playbook - conservative diagnostic collector
 #
 # Design goals:
 #   - no sudo
 #   - no service restarts/stops/starts
-#   - no configuration changes
+#   - no OpenClaw configuration changes
 #   - no migrations
-#   - no network calls performed by this script
+#   - no OpenClaw/system permission changes
 #   - sanitized output by default
 #   - journal logs excluded unless explicitly requested
 #
-# IMPORTANT: Sanitization is best-effort, not a guarantee. Review the output
-# before sharing it publicly.
+# The script may query the locally configured OpenClaw runtime through normal
+# OpenClaw CLI commands. It does not invoke curl, wget, ssh, scp, or any upload
+# command. Sanitization is best-effort, not a guarantee: review output before
+# sharing it publicly.
 
 set -u
 
-SCRIPT_VERSION="0.1.0"
+SCRIPT_VERSION="0.2.0"
 INCLUDE_LOGS=0
 OUTPUT_FILE=""
 SERVICE_NAME="openclaw-gateway.service"
@@ -27,18 +29,23 @@ Usage:
   openclaw-diagnostics.sh [--include-logs] [--output FILE] [--help]
 
 Options:
-  --include-logs   Include the last 80 journal lines for the OpenClaw gateway.
-                   Logs can contain sensitive information. They are sanitized
-                   on a best-effort basis but MUST be manually reviewed before
-                   sharing.
+  --include-logs   Include the last 80 journal message bodies for the OpenClaw
+                   gateway. Logs can contain sensitive information. They are
+                   sanitized on a best-effort basis but MUST be manually
+                   reviewed before sharing.
 
-  --output FILE    Write the sanitized report to FILE instead of stdout.
-                   The file is created with user-only permissions (0600).
+  --output FILE    Write the sanitized report to a new FILE instead of stdout.
+                   The script refuses to overwrite an existing file or symlink.
+                   The new report is created with user-only permissions (0600).
 
   --help           Show this help text.
 
-This script is diagnostic-only. It does not restart services, modify OpenClaw
-configuration, change permissions, migrate sessions, or delete files.
+This script is diagnostic-only with respect to OpenClaw and system state. It
+does not restart services, modify OpenClaw configuration, migrate sessions,
+change OpenClaw/system permissions, or delete files.
+
+When --output is used, the only intended write is creation of the requested
+local report file.
 EOF
 }
 
@@ -68,27 +75,13 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-# Escape a literal string for use in the replacement side of sed s///.
-sed_replacement_escape() {
-  printf '%s' "$1" | sed 's/[&|\\]/\\&/g'
-}
-
-HOME_ESCAPED=$(sed_replacement_escape "${HOME:-}")
-USER_ESCAPED=$(sed_replacement_escape "${USER:-}")
-HOST_VALUE=$(hostname 2>/dev/null || true)
-HOST_ESCAPED=$(sed_replacement_escape "$HOST_VALUE")
-
 sanitize() {
-  # The first sed handles values known from the local environment.
-  # The second applies conservative pattern-based redaction.
-  sed \
-    -e "s|${HOME_ESCAPED}|~|g" \
-    -e "s|/home/${USER_ESCAPED}|~|g" \
-    -e "s|/Users/${USER_ESCAPED}|~|g" \
-    -e "s|${HOST_ESCAPED}|<host>|g" \
-  | sed -E \
+  # Conservative pattern-based redaction. Keep diagnostic meaning where
+  # possible, but never claim that automated sanitization is complete.
+  sed -E \
+    -e 's#/home/[^/[:space:]]+#~#g' \
+    -e 's#/Users/[^/[:space:]]+#~#g' \
     -e 's#(\.openclaw/agents/)[^/[:space:]]+#\1<agent-id>#g' \
-    -e 's#(^|[[:space:]])-[[:space:]]+[^[:space:]]+#\1- <agent-id>#' \
     -e 's#^[[:space:]]*Identity:.*#  Identity: <redacted>#' \
     -e 's#^[[:space:]]*Workspace:.*#  Workspace: <redacted>#' \
     -e 's#^[[:space:]]*Agent dir:.*#  Agent dir: <redacted>#' \
@@ -99,7 +92,15 @@ sanitize() {
     -e 's#[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}#<email>#g' \
     -e 's#(Bearer[[:space:]]+)[^[:space:]]+#\1<redacted-token>#Ig' \
     -e 's#((api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+#\1<redacted-secret>#Ig' \
-    -e 's#\b(sk-[A-Za-z0-9_-]{12,})\b#<redacted-token>#g'
+    -e 's#sk-[A-Za-z0-9_-]{12,}#<redacted-token>#g'
+}
+
+sanitize_agents() {
+  # Agent identifiers are environment-specific. Redact only agent-list header
+  # lines instead of globally replacing every line beginning with a dash.
+  sanitize | sed -E \
+    -e 's#^-[[:space:]]+[^[:space:]]+#- <agent-id>#' \
+    -e 's#^[[:space:]]*Agent:[[:space:]].*#  Agent: <agent-id>#'
 }
 
 emit() {
@@ -115,6 +116,14 @@ emit_stream() {
     sanitize >> "$OUTPUT_FILE"
   else
     sanitize
+  fi
+}
+
+emit_agent_stream() {
+  if [ -n "$OUTPUT_FILE" ]; then
+    sanitize_agents >> "$OUTPUT_FILE"
+  else
+    sanitize_agents
   fi
 }
 
@@ -135,9 +144,20 @@ run_command() {
   { "$@" 2>&1 || true; } | emit_stream
 }
 
+run_agent_command() {
+  section "$1"
+  shift
+
+  if ! command -v "$1" >/dev/null 2>&1; then
+    emit "Command unavailable: $1"
+    return 0
+  fi
+
+  { "$@" 2>&1 || true; } | emit_agent_stream
+}
+
 if [ -n "$OUTPUT_FILE" ]; then
-  # Refuse obvious dangerous destinations and avoid accidental append to an
-  # existing report. This script never needs privileged paths.
+  # Refuse obvious system destinations. No elevated privileges are used.
   case "$OUTPUT_FILE" in
     /etc/*|/usr/*|/bin/*|/sbin/*|/boot/*|/proc/*|/sys/*|/dev/*)
       printf 'Error: refusing system path: %s\n' "$OUTPUT_FILE" >&2
@@ -145,22 +165,27 @@ if [ -n "$OUTPUT_FILE" ]; then
       ;;
   esac
 
-  if [ -e "$OUTPUT_FILE" ]; then
-    printf 'Error: output file already exists; refusing to overwrite: %s\n' "$OUTPUT_FILE" >&2
+  if [ -e "$OUTPUT_FILE" ] || [ -L "$OUTPUT_FILE" ]; then
+    printf 'Error: output file or symlink already exists; refusing to overwrite: %s\n' "$OUTPUT_FILE" >&2
     exit 2
   fi
 
   umask 077
-  : > "$OUTPUT_FILE" || {
-    printf 'Error: cannot create output file: %s\n' "$OUTPUT_FILE" >&2
+  if ! ( set -C; : > "$OUTPUT_FILE" ) 2>/dev/null; then
+    printf 'Error: cannot safely create new output file: %s\n' "$OUTPUT_FILE" >&2
+    exit 1
+  fi
+
+  chmod 600 "$OUTPUT_FILE" 2>/dev/null || {
+    printf 'Error: could not enforce 0600 on output file; removing report.\n' >&2
+    rm -f -- "$OUTPUT_FILE"
     exit 1
   }
-  chmod 600 "$OUTPUT_FILE" 2>/dev/null || true
 fi
 
 emit "OpenClaw Diagnostic Report (sanitized)"
 emit "Collector version: ${SCRIPT_VERSION}"
-emit "Generated locally. Nothing is uploaded by this script."
+emit "Generated locally. No upload command is invoked by this script."
 emit "WARNING: Sanitization is best-effort. Review before sharing."
 
 run_command "UTC time" date -u '+%Y-%m-%dT%H:%M:%SZ'
@@ -168,7 +193,7 @@ run_command "Operating system" uname -srm
 run_command "OpenClaw version" openclaw --version
 run_command "Gateway deep status" openclaw gateway status --deep
 run_command "OpenClaw status" openclaw status
-run_command "Configured agents (identifiers redacted)" openclaw agents list --bindings
+run_agent_command "Configured agents (identifiers redacted)" openclaw agents list --bindings
 run_command "Plugins" openclaw plugins list
 
 section "systemd gateway state"
@@ -187,10 +212,12 @@ else
 fi
 
 if [ "$INCLUDE_LOGS" -eq 1 ]; then
-  section "Gateway journal - last 80 lines (SENSITIVE; review manually)"
+  section "Gateway journal - last 80 message bodies (SENSITIVE; review manually)"
   if command -v journalctl >/dev/null 2>&1; then
     {
-      journalctl --user -u "$SERVICE_NAME" -n 80 --no-pager 2>&1 || true
+      # -o cat omits journal metadata such as timestamp/hostname and returns
+      # message bodies only, reducing unnecessary identifying information.
+      journalctl --user -u "$SERVICE_NAME" -n 80 --no-pager -o cat 2>&1 || true
     } | emit_stream
   else
     emit "Command unavailable: journalctl"
@@ -202,12 +229,13 @@ else
 fi
 
 section "Safety statement"
-emit "No OpenClaw configuration changes were requested."
+emit "No OpenClaw configuration change was requested."
 emit "No service restart/stop/start was requested."
 emit "No session migration was requested."
-emit "No permission change was requested."
+emit "No OpenClaw/system permission change was requested."
 emit "No sudo command was requested."
-emit "No report upload or network transmission was performed by this script."
+emit "No curl/wget/ssh/scp/upload command was requested."
+emit "If --output was used, only the requested local report file was created."
 
 if [ -n "$OUTPUT_FILE" ]; then
   printf 'Sanitized report written to: %s\n' "$OUTPUT_FILE"
