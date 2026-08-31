@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# OpenClaw Recovery Playbook - conservative diagnostic collector
+# OpenClaw Recovery Playbook - privacy-first conservative diagnostic collector
 #
 # Design goals:
 #   - no sudo
@@ -8,8 +8,9 @@
 #   - no OpenClaw configuration changes
 #   - no migrations
 #   - no OpenClaw/system permission changes
+#   - minimal collection by default
+#   - higher-risk diagnostic sections are opt-in
 #   - sanitized output by default
-#   - journal logs excluded unless explicitly requested
 #
 # The script may query the locally configured OpenClaw runtime through normal
 # OpenClaw CLI commands. It does not invoke curl, wget, ssh, scp, or any upload
@@ -18,7 +19,10 @@
 
 set -u
 
-SCRIPT_VERSION="0.2.0"
+SCRIPT_VERSION="0.3.0"
+INCLUDE_STATUS=0
+INCLUDE_AGENTS=0
+INCLUDE_PLUGINS=0
 INCLUDE_LOGS=0
 OUTPUT_FILE=""
 SERVICE_NAME="openclaw-gateway.service"
@@ -26,23 +30,42 @@ SERVICE_NAME="openclaw-gateway.service"
 usage() {
   cat <<'EOF'
 Usage:
-  openclaw-diagnostics.sh [--include-logs] [--output FILE] [--help]
+  openclaw-diagnostics.sh [options]
+
+Privacy-first default collection:
+  - UTC time
+  - operating system/kernel
+  - OpenClaw version
+  - gateway deep status
+  - selected systemd gateway state
 
 Options:
-  --include-logs   Include the last 80 journal message bodies for the OpenClaw
-                   gateway. Logs can contain sensitive information. They are
-                   sanitized on a best-effort basis but MUST be manually
-                   reviewed before sharing.
+  --include-status    Include `openclaw status`. This can expose environment-
+                      specific host, agent, session, heartbeat, account, or
+                      network details. Review output manually before sharing.
 
-  --output FILE    Write the sanitized report to a new FILE instead of stdout.
-                   The script refuses to overwrite an existing file or symlink.
-                   The new report is created with user-only permissions (0600).
+  --include-agents    Include `openclaw agents list` with agent identifiers and
+                      identity/workspace fields redacted on a best-effort basis.
+                      Bindings are intentionally not requested by this script.
 
-  --help           Show this help text.
+  --include-plugins   Include `openclaw plugins list`. Custom/private plugin
+                      names or paths can be environment-specific; review before
+                      sharing.
+
+  --include-logs      Include the last 80 journal message bodies for the OpenClaw
+                      gateway. Logs can contain sensitive information. They are
+                      sanitized on a best-effort basis but MUST be manually
+                      reviewed before sharing.
+
+  --output FILE       Write the sanitized report to a new FILE instead of stdout.
+                      The script refuses to overwrite an existing file or symlink.
+                      The new report is created with user-only permissions (0600).
+
+  --help              Show this help text.
 
 This script is diagnostic-only with respect to OpenClaw and system state. It
 does not restart services, modify OpenClaw configuration, migrate sessions,
-change OpenClaw/system permissions, or delete files.
+change OpenClaw/system permissions, or delete OpenClaw data.
 
 When --output is used, the only intended write is creation of the requested
 local report file.
@@ -51,6 +74,18 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --include-status)
+      INCLUDE_STATUS=1
+      shift
+      ;;
+    --include-agents)
+      INCLUDE_AGENTS=1
+      shift
+      ;;
+    --include-plugins)
+      INCLUDE_PLUGINS=1
+      shift
+      ;;
     --include-logs)
       INCLUDE_LOGS=1
       shift
@@ -90,6 +125,7 @@ sanitize() {
     -e 's#<loopback>#127.0.0.1#g' \
     -e 's#[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}#<uuid>#g' \
     -e 's#[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}#<email>#g' \
+    -e 's#([[:xdigit:]]{1,4}:){2,7}[[:xdigit:]]{0,4}#<ipv6-address>#g' \
     -e 's#(Bearer[[:space:]]+)[^[:space:]]+#\1<redacted-token>#Ig' \
     -e 's#((api[_-]?key|access[_-]?token|auth[_-]?token|password|secret)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+#\1<redacted-secret>#Ig' \
     -e 's#sk-[A-Za-z0-9_-]{12,}#<redacted-token>#g'
@@ -97,7 +133,7 @@ sanitize() {
 
 sanitize_agents() {
   # Agent identifiers are environment-specific. Redact only agent-list header
-  # lines instead of globally replacing every line beginning with a dash.
+  # lines and explicit agent fields.
   sanitize | sed -E \
     -e 's#^-[[:space:]]+[^[:space:]]+#- <agent-id>#' \
     -e 's#^[[:space:]]*Agent:[[:space:]].*#  Agent: <agent-id>#'
@@ -187,14 +223,36 @@ emit "OpenClaw Diagnostic Report (sanitized)"
 emit "Collector version: ${SCRIPT_VERSION}"
 emit "Generated locally. No upload command is invoked by this script."
 emit "WARNING: Sanitization is best-effort. Review before sharing."
+emit "Privacy mode: minimal collection by default; sensitive sections are opt-in."
 
 run_command "UTC time" date -u '+%Y-%m-%dT%H:%M:%SZ'
 run_command "Operating system" uname -srm
 run_command "OpenClaw version" openclaw --version
 run_command "Gateway deep status" openclaw gateway status --deep
-run_command "OpenClaw status" openclaw status
-run_agent_command "Configured agents (identifiers redacted)" openclaw agents list --bindings
-run_command "Plugins" openclaw plugins list
+
+if [ "$INCLUDE_STATUS" -eq 1 ]; then
+  run_command "OpenClaw status (OPT-IN; review manually)" openclaw status
+else
+  section "OpenClaw status"
+  emit "Not collected by default. Use --include-status only if needed."
+  emit "Status output can contain host, session, heartbeat, agent, account, or network details."
+fi
+
+if [ "$INCLUDE_AGENTS" -eq 1 ]; then
+  run_agent_command "Configured agents (OPT-IN; identifiers redacted)" openclaw agents list
+else
+  section "Configured agents"
+  emit "Not collected by default. Use --include-agents only if needed."
+  emit "Agent bindings are intentionally not requested by this script."
+fi
+
+if [ "$INCLUDE_PLUGINS" -eq 1 ]; then
+  run_command "Plugins (OPT-IN; review custom names/paths)" openclaw plugins list
+else
+  section "Plugins"
+  emit "Not collected by default. Use --include-plugins only if needed."
+  emit "Custom/private plugin names or paths can be environment-specific."
+fi
 
 section "systemd gateway state"
 if command -v systemctl >/dev/null 2>&1; then
@@ -212,7 +270,7 @@ else
 fi
 
 if [ "$INCLUDE_LOGS" -eq 1 ]; then
-  section "Gateway journal - last 80 message bodies (SENSITIVE; review manually)"
+  section "Gateway journal - last 80 message bodies (OPT-IN; SENSITIVE)"
   if command -v journalctl >/dev/null 2>&1; then
     {
       # -o cat omits journal metadata such as timestamp/hostname and returns
@@ -224,7 +282,7 @@ if [ "$INCLUDE_LOGS" -eq 1 ]; then
   fi
 else
   section "Gateway journal"
-  emit "Not collected by default. Re-run with --include-logs only if needed."
+  emit "Not collected by default. Use --include-logs only if needed."
   emit "Logs can contain sensitive data and require manual review before sharing."
 fi
 
