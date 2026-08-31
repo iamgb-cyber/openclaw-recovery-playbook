@@ -81,6 +81,7 @@ The recovery was completed without deleting the configured agents or their migra
 - [Session SQLite migration](docs/session-sqlite-migration.md)
 - [systemd recovery notes](docs/systemd-recovery.md)
 - [Post-recovery checklist](docs/post-recovery-checklist.md)
+- [Project changelog](CHANGELOG.md)
 
 ## Privacy-first diagnostic collector
 
@@ -201,7 +202,7 @@ Never publish raw OpenClaw state directories, session databases, tokens, secrets
 
 ## Contributing
 
-Reproducible incident reports and corrections are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Reproducible incident reports and corrections are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and use the [privacy-safe incident template](.github/ISSUE_TEMPLATE/incident-report.md) when reporting a recovery case.
 
 ## License
 
