@@ -74,9 +74,9 @@ openclaw gateway status --deep
 
 Resetting `start-limit-hit` is not itself a repair. Do it only after the underlying startup failure has been addressed.
 
-## Phase G — Validate
+## Phase G — Validate transport and agent runtime separately
 
-Confirm:
+First confirm Gateway transport health:
 
 ```text
 CLI version == expected version
@@ -86,7 +86,31 @@ Connectivity probe == ok
 Expected bind/port == listening
 ```
 
-Then confirm expected agents/plugins/state and review the latest journal for new fatal errors.
+Then validate what deep Gateway status cannot prove:
+
+1. open the control UI from the intended client;
+2. select each expected production agent that matters to the installation;
+3. send a simple non-destructive test message;
+4. confirm that each expected agent completes a turn successfully;
+5. inspect fresh logs for any agent that fails.
+
+A reachable UI is not sufficient evidence of complete recovery.
+
+If an agent turn reports:
+
+```text
+Legacy workspace setup state requires migration for <workspace-path>;
+run openclaw doctor --fix.
+```
+
+or:
+
+```text
+Legacy exec approvals exist at ~/.openclaw/exec-approvals.json.
+Run `openclaw doctor --fix` before using exec approvals.
+```
+
+follow [UI Reachable but Agent Turns Fail After Upgrade](ui-agent-runtime-migration.md). For OpenClaw `2026.8.1`, these states were observed as additional upgrade blockers after the Gateway itself had become reachable.
 
 ## If it still fails
 
