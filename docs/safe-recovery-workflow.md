@@ -47,6 +47,8 @@ A backup should be treated as a rollback asset, not as a substitute for understa
 
 Do not publish the backup. It may contain sessions, credentials, device information, agent metadata, or other sensitive material.
 
+For destructive session-SQLite maintenance, also confirm sufficient free space before importing or rebuilding data.
+
 ## 3. Identify the exact current blocker
 
 Classify what the latest evidence actually says.
@@ -110,14 +112,23 @@ missing system-agent ownership evidenced
 → configure an existing appropriate agent as system owner
 
 legacy session store explicitly reported
-→ inspect/dry-run/import that agent's store using supported tooling
+→ inspect/dry-run the affected target, then stop the Gateway before import
 ```
+
+For session-SQLite maintenance, keep the read-only/destructive boundary explicit:
+
+```text
+read-only:   inspect · dry-run · validate
+maintenance: import · compact · recover · restore
+```
+
+Current OpenClaw documentation states that destructive maintenance modes use the same state ownership lock as Gateway startup. Stop the Gateway before those operations; do not race them against a running service.
 
 Do **not** combine unrelated changes simply to save time. That destroys diagnostic clarity.
 
 ## 6. Re-probe immediately
 
-After the justified change, gather fresh evidence:
+After the justified change — and after restarting the Gateway when offline maintenance was required — gather fresh evidence:
 
 ```bash
 openclaw gateway status --deep
@@ -179,6 +190,7 @@ chmod -R 777 ...
 rm -rf ~/.openclaw/...
 manual SQLite edits
 renaming/deleting sessions.json to suppress migration errors
+running destructive session maintenance against a live Gateway
 removing configured agents to bypass owner resolution
 resetting systemd repeatedly without fixing the crash
 publishing raw logs/state files
