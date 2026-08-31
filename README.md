@@ -6,16 +6,38 @@ A community troubleshooting and recovery playbook for OpenClaw, built from a rea
 
 ## Why this repository exists
 
-An OpenClaw gateway can fail for more than one reason at the same time. In the incident documented here, the visible symptom was a gateway that would not stay online, but the actual recovery required resolving several independent blockers in sequence:
+An OpenClaw gateway can fail for more than one reason at the same time. In the incident documented here, recovery required resolving several independent blockers in sequence:
 
 - stale systemd user-service metadata after an upgrade;
 - unsafe permissions on the user systemd directory/service files;
 - multi-agent ownership ambiguity (`AgentSelectionRequiredError`);
-- official plugin version drift (`codex`);
+- official plugin version drift;
 - legacy per-agent `sessions.json` stores requiring migration to SQLite;
-- systemd `start-limit-hit` after repeated failed starts.
+- systemd `start-limit-hit` after repeated failed starts;
+- a later legacy exec-approvals migration gate;
+- legacy workspace setup/attestation state that could block agent turns even while the control UI was reachable.
 
 The goal of this repository is to help operators diagnose the **next exact blocker** instead of deleting state or applying broad, destructive fixes.
+
+One of the central lessons from the incident is:
+
+```text
+Gateway healthy ≠ application fully recovered
+```
+
+A stronger completion model is:
+
+```text
+Gateway process healthy
+        ↓
+control UI reachable
+        ↓
+agent runtime/state ready
+        ↓
+expected agent completes a test turn
+        ↓
+recovery confirmed
+```
 
 ## Quick failure triage
 
@@ -28,6 +50,8 @@ Start with the exact error you can observe. Do not treat this table as proof of 
 | `Plugin version drift` | Every plugin or OpenClaw component should be updated blindly | Identify and verify the specific plugin/version reported by deep status | [Known failure patterns](docs/known-failure-patterns.md#pattern-5--official-plugin-version-drift) |
 | `Legacy session store requires migration` | `sessions.json` should be renamed or deleted | Run targeted `inspect` and `dry-run` before any import | [Session SQLite migration](docs/session-sqlite-migration.md) |
 | `start-limit-hit` | systemd itself is the root cause | Read the preceding gateway startup exception in the journal | [Known failure patterns](docs/known-failure-patterns.md#pattern-7--systemd-start-limit-hit) |
+| `Legacy workspace setup state requires migration` | A reachable UI means the agent is healthy | Preserve state and inspect the offline migration path | [UI / agent runtime migration](docs/ui-agent-runtime-migration.md) |
+| `Legacy exec approvals exist...` | Repeating `doctor --fix` must eventually resolve it | Verify whether the retired source still exists and use version-aware guidance | [UI / agent runtime migration](docs/ui-agent-runtime-migration.md) |
 
 A useful mental model is:
 
@@ -39,12 +63,13 @@ A different error after a justified fix can be progress: the gateway may have ad
 
 ## Recovery principles
 
-1. **Back up first.** Preserve `~/.openclaw` before modifying state.
-2. **Read the logs.** Fix the error the gateway is currently reporting, not the error you expect to see.
-3. **Prefer supported migration commands.** Do not manually edit or delete session stores to make startup errors disappear.
+1. **Back up first.** Preserve OpenClaw state before modifying migrations or configuration.
+2. **Read the logs.** Fix the error the gateway or agent runtime is currently reporting, not the error you expect to see.
+3. **Prefer supported migration commands.** Do not manually edit or delete session/state stores to make errors disappear.
 4. **Avoid broad permission changes.** Do not use recursive `chmod` or `sudo` against a user-owned OpenClaw service unless the documentation explicitly requires it.
-5. **Validate after every stage.** A command completing successfully does not guarantee that the gateway is healthy.
-6. **Preserve rollback artifacts.** Keep backups, migration manifests, and quarantined files until the system has remained stable.
+5. **Validate after every stage.** A command completing successfully does not guarantee that the gateway or agents are healthy.
+6. **Validate the actual application.** A reachable UI is not proof that expected agent turns work.
+7. **Preserve rollback artifacts.** Keep backups, migration manifests, and quarantined/preserved files until the system has remained stable.
 
 ## Real incident summarized
 
@@ -66,6 +91,8 @@ Final healthy state:
 Runtime: running
 Connectivity probe: ok
 Listening: loopback:18789
+Control UI: reachable
+Expected agents: successful test turns
 ```
 
 The recovery was completed without deleting the configured agents or their migrated session data.
@@ -74,6 +101,7 @@ The recovery was completed without deleting the configured agents or their migra
 
 - [Safe recovery workflow](docs/safe-recovery-workflow.md)
 - [Known failure patterns](docs/known-failure-patterns.md)
+- [UI reachable but agent turns fail after upgrade](docs/ui-agent-runtime-migration.md)
 - [Sanitized error examples](examples/errors/sanitized-errors.md)
 - [Incident report](docs/incident-2026-08-31.md)
 - [Diagnosis workflow](docs/diagnosis.md)
@@ -198,7 +226,7 @@ Environment-specific identifiers are intentionally generalized. Agent IDs, local
 
 ## Security
 
-Never publish raw OpenClaw state directories, session databases, tokens, secrets, complete logs, pairing data, or unreviewed configuration files. See [SECURITY.md](SECURITY.md).
+Never publish raw OpenClaw state directories, session databases, tokens, secrets, complete logs, pairing data, approvals data, or unreviewed configuration files. See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
