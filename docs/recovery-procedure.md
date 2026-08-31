@@ -15,6 +15,8 @@ openclaw agents list --bindings
 openclaw plugins list
 ```
 
+Raw output from these commands can contain environment-specific or sensitive data. Review before sharing publicly.
+
 ## Phase B — Correct service drift only if evidenced
 
 If the installed service is stale after an upgrade, use the service installer supported by your OpenClaw version. For the tested 2026.8.1 incident:
@@ -23,7 +25,7 @@ If the installed service is stale after an upgrade, use the service installer su
 openclaw gateway install --force
 ```
 
-If the installer reports unsafe permissions, fix only the paths it identifies.
+If the installer reports unsafe permissions, fix only the paths it identifies. Do not use recursive permission changes as a shortcut.
 
 ## Phase C — Resolve multi-agent ownership only if evidenced
 
@@ -38,25 +40,39 @@ Never copy an environment-specific agent ID from an incident report.
 
 ## Phase D — Resolve official plugin drift
 
-If deep status reports a specific official plugin version mismatch, update that identified plugin using the plugin command supported by your installed release, then verify the plugin list.
+If deep status reports a specific official plugin version mismatch, update only that identified plugin using the plugin command supported by your installed release, then verify the plugin list.
 
-Re-check the gateway. If it still fails, read the new journal output rather than assuming the plugin was the only blocker.
+Re-check the Gateway. If it still fails, read the new journal output rather than assuming the plugin was the only blocker.
 
 ## Phase E — Migrate legacy session stores
 
 If startup explicitly reports a legacy session store requiring migration, follow [Legacy Session Store → SQLite Migration](session-sqlite-migration.md).
 
-Use `inspect`, `dry-run`, `import`, and `validate`, preferably targeted to the agent named by the error.
+Use this sequence:
+
+1. `inspect` the affected target;
+2. `dry-run` the affected target;
+3. stop the Gateway before destructive maintenance;
+4. verify a backup of OpenClaw state and sufficient free space;
+5. run `import` for the evidenced target;
+6. run `validate`;
+7. restart/probe only after maintenance is complete.
+
+Current OpenClaw documentation classifies `inspect`, `dry-run`, and `validate` as read-only. `import`, `compact`, `recover`, and `restore` are destructive maintenance modes that use the Gateway state ownership lock and must not race a running Gateway.
+
+Prefer targeting the agent named by the current error during sequential recovery. Do not delete or rename `sessions.json` to suppress the startup check.
 
 ## Phase F — Recover systemd and start
 
-After actual startup blockers are corrected:
+After actual startup blockers and any required offline maintenance are corrected:
 
 ```bash
 systemctl --user reset-failed openclaw-gateway.service
 openclaw gateway start
 openclaw gateway status --deep
 ```
+
+Resetting `start-limit-hit` is not itself a repair. Do it only after the underlying startup failure has been addressed.
 
 ## Phase G — Validate
 
@@ -70,7 +86,7 @@ Connectivity probe == ok
 Expected bind/port == listening
 ```
 
-Then confirm agents/plugins and review the latest journal for new fatal errors.
+Then confirm expected agents/plugins/state and review the latest journal for new fatal errors.
 
 ## If it still fails
 
