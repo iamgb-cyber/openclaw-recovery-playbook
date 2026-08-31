@@ -12,6 +12,8 @@ This project is an unofficial community playbook. Documentation is version-aware
 - Safe Recovery Workflow centered on evidence preservation and one justified change at a time.
 - Sanitized error examples designed for troubleshooting, searchability, and safe public issue references.
 - GitHub incident-report template with explicit privacy and evidence requirements.
+- UI/agent-runtime migration recovery guide for the case where the Gateway and control UI are reachable but agent turns still fail after an upgrade.
+- Version-specific documentation for the OpenClaw `2026.8.1` legacy exec-approvals migration catch-22, with upstream issue references and a preservation-first workaround.
 
 ### Changed
 
@@ -19,6 +21,33 @@ This project is an unofficial community playbook. Documentation is version-aware
 - Recovery guidance now requires the Gateway to be stopped before destructive Session SQLite maintenance so the operation does not race the Gateway state ownership lock.
 - Recovery procedure and safe workflow were aligned with the same offline-maintenance rule.
 - Security guidance was expanded to emphasize manual review even after automated sanitization.
+- Post-recovery validation now requires successful test turns from expected production agents; Gateway transport health and UI reachability alone are no longer treated as proof of complete recovery.
+
+### Incident follow-up — UI reachable, agent runtime blocked
+
+A later validation stage of the `2026.8.1` recovery exposed two additional migration-sensitive states:
+
+- legacy workspace setup/attestation state that prevented agent turns even though the control UI was reachable;
+- a retired `exec-approvals.json` source that could block the repair path intended to migrate it.
+
+The documented recovery sequence now emphasizes:
+
+```text
+Gateway process healthy
+        ↓
+control UI reachable
+        ↓
+agent runtime/state ready
+        ↓
+expected agent completes a test turn
+        ↓
+recovery confirmed
+```
+
+Related upstream reports:
+
+- <https://github.com/openclaw/openclaw/issues/133813>
+- <https://github.com/openclaw/openclaw/issues/133881>
 
 ### Quality review
 
