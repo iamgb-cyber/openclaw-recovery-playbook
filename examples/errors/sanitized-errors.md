@@ -153,6 +153,53 @@ Related guide: [Known Failure Patterns — systemd start-limit-hit](../../docs/k
 
 ---
 
+## UI reachable but agent workspace migration pending
+
+```text
+Legacy workspace setup state requires migration for <workspace-path>;
+run openclaw doctor --fix.
+```
+
+Interpretation: the control UI may be reachable while the selected agent's workspace/runtime state still requires migration. Gateway transport health is not proof that agent turns are ready.
+
+Related guide: [UI Reachable but Agent Turns Fail After Upgrade](../../docs/ui-agent-runtime-migration.md)
+
+---
+
+## Exec approvals migration gate
+
+```text
+ExecApprovalsMigrationRequiredError:
+Legacy exec approvals exist at ~/.openclaw/exec-approvals.json.
+Run `openclaw doctor --fix` before using exec approvals.
+```
+
+Interpretation: a retired file-backed approvals source is still visible while the runtime expects canonical approvals state in SQLite. On affected releases, this can also prevent the repair path from reaching its own migration step.
+
+Do not publish the raw approvals file. Preserve it privately and use the version-aware recovery guide.
+
+Related guide: [UI Reachable but Agent Turns Fail After Upgrade](../../docs/ui-agent-runtime-migration.md)
+
+---
+
+## Successful workspace-state migration
+
+Representative sanitized Doctor output:
+
+```text
+Legacy state detected:
+- Workspace setup and attestations: legacy files -> shared SQLite state
+
+Migrated workspace attestation to SQLite.
+Migrated workspace setup state to SQLite.
+Verified canonical SQLite workspace setup state.
+Removed retired workspace state after verified SQLite import.
+```
+
+Interpretation: Doctor detected legacy workspace state, imported it, verified canonical SQLite state, and retired the legacy source.
+
+---
+
 ## Healthy post-recovery state
 
 ```text
@@ -163,7 +210,7 @@ NRestarts=0
 ExecMainStatus=0
 ```
 
-Interpretation: these are strong health indicators, but a complete recovery check should also verify versions, expected state, and the fresh journal.
+Interpretation: these are strong transport/runtime health indicators, but complete recovery should also verify versions, expected state, fresh logs, control-UI access, and successful test turns from the expected agents.
 
 ## Sanitization checklist
 
