@@ -11,11 +11,26 @@ Legacy session store requires migration:
 
 ## Safety rule
 
-**Do not delete, truncate, or manually rewrite the legacy store to bypass startup.**
+**Do not delete, truncate, rename, or manually rewrite the legacy store to bypass startup.**
 
-Back up OpenClaw state first and use the migration tooling provided by the installed OpenClaw version.
+Before importing important history:
+
+1. stop the Gateway;
+2. back up the OpenClaw state directory using a method appropriate for your installation;
+3. confirm there is sufficient free space for the state volume and temporary staging volume;
+4. use the migration tooling provided by the installed OpenClaw version.
+
+Current OpenClaw documentation distinguishes the session-SQLite modes as follows:
+
+- `inspect`, `dry-run`, and `validate` are read-only;
+- `import`, `compact`, `recover`, and `restore` are destructive maintenance modes and take the same state ownership lock used by Gateway startup;
+- destructive modes must not race a running Gateway. Stop the Gateway first.
+
+Upstream reference: <https://docs.openclaw.ai/cli/doctor>
 
 ## Target one agent at a time
+
+Targeting the agent named by the current error preserves diagnostic clarity in a multi-agent installation.
 
 ### 1. Inspect
 
@@ -43,7 +58,11 @@ issues
 
 If issues are reported, investigate before importing.
 
-### 3. Import
+### 3. Stop, back up, then import
+
+If the Gateway is not already stopped, stop it using the service lifecycle appropriate for your installation before running `import`.
+
+Confirm the backup before proceeding. Then:
 
 ```bash
 openclaw doctor --session-sqlite import --session-sqlite-agent <agent-id>
@@ -53,6 +72,8 @@ Retain the migration run and manifest produced by your own installation, but do 
 
 Evaluate imported entry/event counts and issue count, not merely the shell exit status.
 
+If an explicit import fails after artifacts have moved, keep the Gateway stopped and follow the current Doctor recovery procedure rather than manually moving archived artifacts.
+
 ### 4. Validate
 
 ```bash
@@ -61,14 +82,21 @@ openclaw doctor --session-sqlite validate --session-sqlite-agent <agent-id>
 
 After successful import, validation may report no remaining target if the legacy source has already been archived or removed from the active migration set. Interpret this together with the import output and migration manifest.
 
+### 5. Restart only after maintenance is complete
+
+When the required imports/validation are complete, restart the Gateway using the lifecycle supported by your installation and re-check deep status plus the fresh journal.
+
 ## Multi-agent environments
 
 A gateway may reveal legacy stores sequentially. A conservative workflow is:
 
-1. migrate the agent named by the current error;
-2. retry startup;
-3. inspect the fresh journal;
-4. migrate another agent only when supported by inspection/error evidence.
+1. identify the agent named by the current migration error;
+2. inspect and dry-run that target;
+3. with the Gateway stopped and state backed up, import and validate the target;
+4. restart/probe and inspect the fresh journal;
+5. repeat for another agent only when supported by new inspection/error evidence.
+
+If several targets are already known, the installed Doctor also supports all-agent selectors. This playbook favors targeted recovery when diagnosing a sequential startup failure because it keeps each state change attributable to one evidenced blocker.
 
 ## Unreferenced JSONL files
 
